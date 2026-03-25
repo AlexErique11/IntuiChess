@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+venv/
+env/
+.env
+.venv
+
+# ML Training Data & Models
+#ml_training/features.csv
+#ml_training/elo_models/*.pkl
+#ml_training/elo_models/model_*.pkl
+*.joblib
+*.h5
+*.hdf5
+*.pickle
+*.pkl
+
+# Large datasets
+*.csv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+data/
+datasets/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.npm
+.yarn-integrity
+
+# Build outputs
+dist/
+build/
+out/
+release/
+*.exe
+*.dmg
+*.pkg
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test files that aren't needed
+test_*.py
+test_*.js
+*_test.py
+*_test.js
+
+# Electron build artifacts
+app/project/dist/
+app/project/release/
+app/project/out/
