@@ -2,7 +2,7 @@
 
 A human-centric chess analysis system that uses machine learning to evaluate chess positions from a player's perspective, focusing on playability and decision-making difficulty rather than traditional engine evaluation.
 
-## 🧠 Machine Learning Research
+##  Machine Learning Research
 
 This project explores a novel approach to chess analysis by training models on human gameplay patterns rather than engine evaluations. The goal is to understand how humans actually experience and evaluate chess positions.
 
@@ -56,7 +56,7 @@ def analyze_move_volatility(board, engine):
     return volatility, deep_eval
 ```
 
-## 🎯 Chess Application
+## Chess Application
 
 Built around these ML models, the desktop application provides:
 
@@ -95,7 +95,7 @@ The application will automatically download the ML models (~200-500MB) on first 
 - Double-click `start-dev.bat` for development mode with hot-reload
 - Double-click `start_desktop_app.bat` for the production desktop app
 
-## 🛠️ Technologies Used
+##  Technologies Used
 
 ### Machine Learning Stack
 - **Python** with scikit-learn for model training
@@ -116,7 +116,7 @@ The application will automatically download the ML models (~200-500MB) on first 
 - Real-time analysis pipeline with 300ms debouncing
 - IPC communication between frontend and ML backend
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 ChessAnalyser/
@@ -163,7 +163,7 @@ const performAnalysis = async (fen) => {
 };
 ```
 
-## 📊 Performance Metrics
+##  Performance Metrics
 
 - **Training Data Scale**: 1B+ positions from 50M+ human games
 - **Model Storage**: 200-500MB compressed ML models
@@ -171,18 +171,9 @@ const performAnalysis = async (fen) => {
 - **Memory Usage**: ~300MB RAM for full model loading
 - **Accuracy**: RMSE < 1.2, R² > 0.85 across all skill levels
 
-## 🔮 Future Development
+##  Future Development
 
 Planned enhancements include:
 - **Reinforcement Learning**: Self-improving models through gameplay
 - **Opening Analysis**: ML-powered opening preparation tools
-- **Mobile Application**: React Native version for mobile devices
-- **Tournament Integration**: Chess.com and Lichess API connections
 
-## 📄 License
-
-This project is developed for educational and research purposes. The chess analysis models and training data are available for academic and personal use.
-
----
-
-*Chess Analyser* - Human-centric chess analysis through machine learning research
