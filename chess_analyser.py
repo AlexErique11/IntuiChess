@@ -6,7 +6,6 @@ import joblib
 import json
 import os
 import math
-from position_commentary import describe_position
 from ml_training.feature_extraction import compute_features
 
 
@@ -45,12 +44,15 @@ def categorize_elo(avg_elo):
     else:
         return "2200+"
 
+def cp_to_eval_bar(cp, max_val=10.0):
+    """Convert centipawns (white's POV) to the -10..+10 display scale via tanh."""
+    return max(-max_val, min(max_val, math.tanh(cp / 400.0) * max_val))
+
 # --- Ask user for FEN, Elo, and time control ---
 fen = input("Enter a FEN: ")
 avg_elo = int(input("Enter average Elo: "))
 elo_range = categorize_elo(avg_elo)
 
-# Ask for time control
 time_control = input("Enter time control ('blitz' or 'rapid_classical'): ").strip().lower()
 if time_control not in ["blitz", "rapid_classical"]:
     raise ValueError("Invalid time control. Must be 'blitz' or 'rapid_classical'.")
@@ -60,74 +62,66 @@ board = chess.Board(fen)
 with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
     features = compute_features(board, engine)
 
-# --- Targets ---
-targets = ["label_position_quality", "label_move_ease"]
+# --- Stockfish eval converted to white's POV ---
+raw_eval = features.get("stockfish_eval", 0) or 0
+raw_eval = max(-10000, min(10000, float(raw_eval)))
+side_sign = 1 if board.turn == chess.WHITE else -1
+eval_white_cp = raw_eval * side_sign
 
-
-# --- Non-linear evaluation bar mapping ---
-def score_to_eval_bar(predicted_score, max_eval=10, extreme_scale=3):
-    """
-    Map 0-1 normalized score to non-linear, engine-style eval bar.
-    """
-    x = predicted_score - 0.5  # center at 0
-    sign = math.copysign(1, x)
-    abs_x = abs(x)
-    base_eval = max_eval * math.log1p(10 * abs_x) / math.log1p(10)
-    extreme_eval = (abs_x ** 2) * extreme_scale
-    eval_bar = sign * (base_eval + extreme_eval)
-    return eval_bar
-
+# --- Run ML models ---
 predicted_scores = {}
-
-# --- Predict each target ---
-for target in targets:
-    # Select feature columns (fall back to default if not specified for this elo range)
+for target in ["label_position_quality", "label_move_ease"]:
     if elo_range in FEATURE_SETS and target in FEATURE_SETS[elo_range]:
         feature_cols = FEATURE_SETS[elo_range][target]
     else:
         feature_cols = FEATURE_SETS["default"][target]
 
-    # Prepare input
-    X = pd.DataFrame([{k: features[k] for k in feature_cols}])
+    X = pd.DataFrame([{k: features.get(k, 0) for k in feature_cols}])
 
-    # Load model
     model_path = os.path.join(MODEL_DIR, f"model_{elo_range}_{time_control}_{target}.pkl")
     if not os.path.exists(model_path):
         raise ValueError(f"No trained model found for Elo range {elo_range}, time {time_control}, target {target}")
     model = joblib.load(model_path)
+    predicted_scores[target] = float(model.predict(X)[0])
 
-    # Predict
-    predicted_score = model.predict(X)[0]
-    predicted_scores[target] = predicted_score
+me_score = max(0.01, min(0.9999, predicted_scores["label_move_ease"]))
+pq_score = max(0.01, min(0.9999, predicted_scores["label_position_quality"]))
 
-    # Convert to eval bar
-    eval_bar = score_to_eval_bar(predicted_score, max_eval=10, extreme_scale=3)
+# --- Move Ease: predicted eval after next human move ---
+# Invert label formula: diff_expected = 100 * (1/me_score - 1)
+# The human is expected to lose diff_expected cp from the engine's best.
+diff_expected = 100.0 * (1.0 / me_score - 1.0)
+predicted_move_ease_cp = eval_white_cp - side_sign * diff_expected
+move_ease_bar = cp_to_eval_bar(predicted_move_ease_cp)
 
-    # Fetch metrics
-    metrics = model_metrics.get(elo_range, {}).get(time_control, {}).get(target, {})
-    n_games = metrics.get("n_games", "unknown")
-    n_positions = metrics.get("n_positions", "unknown")
-    rmse = metrics.get("rmse", None)
-    certainty = max(0.0, 1.0 - rmse) if rmse is not None else None
+# --- Position Quality: predicted eval after ~10 moves ---
+# Model trained on 20-move horizon; approximate 10-move by halving the drift.
+pq_score_10 = 1.0 / (1.0 + 0.5 * (1.0 / pq_score - 1.0))
+predicted_pq_cp = eval_white_cp * pq_score_10
+position_quality_bar = cp_to_eval_bar(predicted_pq_cp)
 
-    # Report
-    label_name = "Position quality" if target == "label_position_quality" else "Move ease"
-    print(f"\n[{label_name}]")
-    print(f"Predicted score (eval bar): {eval_bar:.2f}")
-    if certainty is not None:
-        print(f"Model certainty: {certainty*100:.1f}% (based on RMSE)")
-    print(f"Trained on: {n_games} games ({n_positions} positions) for Elo {elo_range}, Time {time_control}")
+# --- Report ---
+print(f"\nStockfish eval (white's POV): {eval_white_cp:+.0f} cp")
 
-# --- Generate position commentary ---
-eval_bars = {
-    "position_quality": predicted_scores.get("label_position_quality", 0),
-    "move_ease": predicted_scores.get("label_move_ease", 0)
-}
+print(f"\n[Move Ease]  — predicted eval after next human move")
+print(f"  Expected cp loss vs best move : {diff_expected:.1f} cp")
+print(f"  Predicted eval after move     : {predicted_move_ease_cp:+.1f} cp")
+print(f"  Eval bar                      : {move_ease_bar:+.2f}")
 
-# commentary = describe_position(features, eval_bars)
-# print("\n--- Position Commentary ---")
-# print(commentary)
+print(f"\n[Position Quality]  — predicted eval after ~10 moves")
+print(f"  Predicted eval after 10 moves : {predicted_pq_cp:+.1f} cp")
+print(f"  Eval bar                      : {position_quality_bar:+.2f}")
 
+# --- Model accuracy ---
+tc_metrics = model_metrics.get(elo_range, {}).get(time_control, {})
+for target, label in [("label_move_ease", "Move Ease"), ("label_position_quality", "Pos. Quality")]:
+    m = tc_metrics.get(target, {})
+    r2   = m.get("r2")
+    corr = m.get("corr")
+    n_games = m.get("n_games", "?")
+    r2_str   = f"{r2*100:.0f}%" if r2   is not None else "—"
+    corr_str = f"{corr:.2f}"   if corr is not None else "—"
+    print(f"  {label} model accuracy : R²={r2_str}  r={corr_str}  ({n_games} games)")
 
 # --- Raw feature values ---
 print("\n--- Raw Features ---")

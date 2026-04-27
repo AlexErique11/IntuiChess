@@ -1,5 +1,7 @@
 // Real chess position analysis using Python chess_analyser.py logic
 
+interface ModelMetric { r2: number | null; corr: number | null; }
+
 export interface AnalysisResult {
   success: boolean;
   position_quality: number;
@@ -7,10 +9,8 @@ export interface AnalysisResult {
   features: Record<string, number | string>;
   elo_range: string;
   time_control: string;
-  raw_scores?: {
-    position_quality: number;
-    move_ease: number;
-  };
+  model_accuracy?: { move_ease: ModelMetric; position_quality: ModelMetric; };
+  raw_scores?: Record<string, number>;
   error?: string;
 }
 

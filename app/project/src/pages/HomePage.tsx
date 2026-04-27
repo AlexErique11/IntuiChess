@@ -26,6 +26,7 @@ export default function HomePage() {
   const [eloRange, setEloRange] = useState<string>('1400-1600');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [modelAccuracy, setModelAccuracy] = useState<{ move_ease: { r2: number | null; corr: number | null }; position_quality: { r2: number | null; corr: number | null } } | null>(null);
   const [boardFlipped, setBoardFlipped] = useState<boolean>(false);
 
   useEffect(() => {
@@ -125,6 +126,7 @@ export default function HomePage() {
       setMoveEase(result.move_ease);
       setAnalysisFeatures(result.features);
       setEloRange(result.elo_range);
+      setModelAccuracy(result.model_accuracy ?? null);
     } catch (error) {
       console.error('❌ Analysis failed:', error);
       setAnalysisError(error instanceof Error ? error.message : 'Analysis failed');
@@ -256,6 +258,23 @@ export default function HomePage() {
                       <strong>📁 Model Range:</strong>
                       <span>{eloRange}</span>
                     </div>
+                    {modelAccuracy && (
+                      <div className="pt-1 border-t border-slate-200 space-y-1">
+                        <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Model Accuracy</div>
+                        {(['move_ease', 'position_quality'] as const).map(key => {
+                          const m = modelAccuracy[key];
+                          const label = key === 'move_ease' ? 'Move Ease' : 'Pos. Quality';
+                          const r2 = m.r2 != null ? (m.r2 * 100).toFixed(0) + '%' : '—';
+                          const corr = m.corr != null ? m.corr.toFixed(2) : '—';
+                          return (
+                            <div key={key} className="flex justify-between text-xs">
+                              <span className="text-slate-600">{label}</span>
+                              <span className="text-slate-700 font-mono">R²={r2} r={corr}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     <div className="flex justify-between items-center">
                       <strong>🔄 Status:</strong>
                       <span className="min-w-[80px] text-right">{

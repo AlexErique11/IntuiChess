@@ -55,18 +55,10 @@ def categorize_elo(avg_elo):
     else:
         return "2200+"
 
-# --- Non-linear evaluation bar mapping (copied from chess_analyser.py) ---
-def score_to_eval_bar(predicted_score, max_eval=10, extreme_scale=3):
-    """
-    Map 0-1 normalized score to non-linear, engine-style eval bar.
-    """
-    x = predicted_score - 0.5  # center at 0
-    sign = math.copysign(1, x)
-    abs_x = abs(x)
-    base_eval = max_eval * math.log1p(10 * abs_x) / math.log1p(10)
-    extreme_eval = (abs_x ** 2) * extreme_scale
-    eval_bar = sign * (base_eval + extreme_eval)
-    return eval_bar
+# --- Centipawn to eval bar mapping ---
+def cp_to_eval_bar(cp, max_val=10.0):
+    """Convert centipawns (white's POV) to the -10..+10 display scale via tanh."""
+    return max(-max_val, min(max_val, math.tanh(cp / 400.0) * max_val))
 
 def convert_to_json_serializable(obj):
     """
@@ -82,78 +74,100 @@ def convert_to_json_serializable(obj):
         return obj
 
 def analyze_position(fen, avg_elo=1500, time_control="blitz"):
-    """
-    Analyze a chess position using the exact logic from chess_analyser.py
-    """
     try:
         elo_range = categorize_elo(avg_elo)
-        
-        # --- Start Stockfish & extract features (copied from chess_analyser.py) ---
+
         board = chess.Board(fen)
         with chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH) as engine:
             features = compute_features(board, engine)
-        
-        # --- Targets (copied from chess_analyser.py) ---
-        targets = ["label_position_quality", "label_move_ease"]
+
+        # --- Stockfish eval, converted to white's POV ---
+        # stockfish_eval is from the side-to-move's POV (positive = good for them).
+        # Multiply by -1 when it's black's turn to express everything from white's perspective.
+        raw_eval = features.get("stockfish_eval", 0) or 0
+        raw_eval = max(-10000, min(10000, float(raw_eval)))
+        side_sign = 1 if board.turn == chess.WHITE else -1
+        eval_white_cp = raw_eval * side_sign
+
+        # --- Run ML models for move ease and position quality ---
         predicted_scores = {}
-        eval_bars = {}
-        
-        # --- Predict each target (copied from chess_analyser.py) ---
-        for target in targets:
-            # Select feature columns (fall back to default if not specified for this elo range)
+        for target in ["label_position_quality", "label_move_ease"]:
             if elo_range in FEATURE_SETS and target in FEATURE_SETS[elo_range]:
                 feature_cols = FEATURE_SETS[elo_range][target]
             else:
                 feature_cols = FEATURE_SETS["default"][target]
 
-            # Prepare input
-            X = pd.DataFrame([{k: features[k] for k in feature_cols}])
-
-            # Load model
+            X = pd.DataFrame([{k: features.get(k, 0) for k in feature_cols}])
             model_path = os.path.join(MODEL_DIR, f"model_{elo_range}_{time_control}_{target}.pkl")
-            if not os.path.exists(model_path):
-                # If model doesn't exist, use a fallback value
-                predicted_score = 0.5  # neutral
-                eval_bar = 0.0
-            else:
+            if os.path.exists(model_path):
                 model = joblib.load(model_path)
-                # Predict
-                predicted_score = model.predict(X)[0]
-                # Convert to eval bar
-                eval_bar = score_to_eval_bar(predicted_score, max_eval=10, extreme_scale=3)
+                predicted_scores[target] = float(model.predict(X)[0])
+            else:
+                predicted_scores[target] = 0.5
 
-            # Convert to native Python types for JSON serialization
-            predicted_scores[target] = convert_to_json_serializable(predicted_score)
-            eval_bars[target] = convert_to_json_serializable(eval_bar)
+        # Clamp model outputs away from 0 to avoid division by zero
+        me_score = max(0.01, min(0.9999, predicted_scores["label_move_ease"]))
+        pq_score = max(0.01, min(0.9999, predicted_scores["label_position_quality"]))
 
-        # --- Prepare features for display (copied from chess_analyser.py) ---
+        # --- Move Ease bar: predicted eval after the next human move ---
+        # label_move_ease = 1 / (1 + diff/100), where diff = cp lost vs engine best.
+        # Invert: diff_expected = 100 * (1/score - 1).
+        # When it's white's turn the human (white) loses diff from white's advantage.
+        # When it's black's turn the human (black) loses diff, which benefits white.
+        diff_expected = 100.0 * (1.0 / me_score - 1.0)
+        predicted_move_ease_cp = eval_white_cp - side_sign * diff_expected
+        move_ease = cp_to_eval_bar(predicted_move_ease_cp)
+
+        # --- Position Quality bar: predicted eval after ~10 moves ---
+        # The model was trained with a 20-move lookahead.
+        # Approximate a 10-move horizon: half the lookahead → half the expected drift.
+        # If D_20 = 100*(1/pq_20 - 1), then D_10 = D_20/2,
+        # so pq_10 = 1 / (1 + 0.5*(1/pq_20 - 1)).
+        pq_score_10 = 1.0 / (1.0 + 0.5 * (1.0 / pq_score - 1.0))
+        predicted_pq_cp = eval_white_cp * pq_score_10
+        position_quality = cp_to_eval_bar(predicted_pq_cp)
+
+        # --- Prepare features for display ---
         display_features = {}
         for k, v in features.items():
-            if k not in ["top_moves", "evals_dict"]:
+            if k not in ("top_moves", "evals_dict"):
                 try:
-                    # Convert to native Python types for JSON serialization
                     display_features[k] = convert_to_json_serializable(v)
                 except (ValueError, TypeError):
                     display_features[k] = str(v)
 
+        # --- Model accuracy from training metrics ---
+        tc_metrics = model_metrics.get(elo_range, {}).get(time_control, {})
+        model_accuracy = {
+            "move_ease": {
+                "r2":   tc_metrics.get("label_move_ease", {}).get("r2"),
+                "corr": tc_metrics.get("label_move_ease", {}).get("corr"),
+            },
+            "position_quality": {
+                "r2":   tc_metrics.get("label_position_quality", {}).get("r2"),
+                "corr": tc_metrics.get("label_position_quality", {}).get("corr"),
+            },
+        }
+
         return {
             "success": True,
-            "position_quality": eval_bars.get("label_position_quality", 0.0),
-            "move_ease": eval_bars.get("label_move_ease", 0.0),
+            "position_quality": position_quality,
+            "move_ease": move_ease,
             "features": display_features,
             "elo_range": elo_range,
             "time_control": time_control,
+            "model_accuracy": model_accuracy,
             "raw_scores": {
-                "position_quality": predicted_scores.get("label_position_quality", 0.5),
-                "move_ease": predicted_scores.get("label_move_ease", 0.5)
+                "position_quality": pq_score,
+                "move_ease": me_score,
+                "stockfish_eval_cp": eval_white_cp,
+                "predicted_move_ease_cp": predicted_move_ease_cp,
+                "predicted_pq_cp": predicted_pq_cp,
             }
         }
 
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
