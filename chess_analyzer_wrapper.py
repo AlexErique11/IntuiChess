@@ -118,13 +118,10 @@ def analyze_position(fen, avg_elo=1500, time_control="blitz"):
         predicted_move_ease_cp = eval_white_cp - side_sign * diff_expected
         move_ease = cp_to_eval_bar(predicted_move_ease_cp)
 
-        # --- Position Quality bar: predicted eval after ~10 moves ---
-        # The model was trained with a 20-move lookahead.
-        # Approximate a 10-move horizon: half the lookahead → half the expected drift.
-        # If D_20 = 100*(1/pq_20 - 1), then D_10 = D_20/2,
-        # so pq_10 = 1 / (1 + 0.5*(1/pq_20 - 1)).
-        pq_score_10 = 1.0 / (1.0 + 0.5 * (1.0 / pq_score - 1.0))
-        predicted_pq_cp = eval_white_cp * pq_score_10
+        # --- Position Quality bar: predicted eval after ~20 moves ---
+        # pq_score encodes eval stability over 20 moves (the training lookahead).
+        # High score = stable; low score = volatile, eval regresses toward 0.
+        predicted_pq_cp = eval_white_cp * pq_score
         position_quality = cp_to_eval_bar(predicted_pq_cp)
 
         # --- Prepare features for display ---

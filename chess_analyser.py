@@ -94,10 +94,8 @@ diff_expected = 100.0 * (1.0 / me_score - 1.0)
 predicted_move_ease_cp = eval_white_cp - side_sign * diff_expected
 move_ease_bar = cp_to_eval_bar(predicted_move_ease_cp)
 
-# --- Position Quality: predicted eval after ~10 moves ---
-# Model trained on 20-move horizon; approximate 10-move by halving the drift.
-pq_score_10 = 1.0 / (1.0 + 0.5 * (1.0 / pq_score - 1.0))
-predicted_pq_cp = eval_white_cp * pq_score_10
+# --- Position Quality: predicted eval after ~20 moves ---
+predicted_pq_cp = eval_white_cp * pq_score
 position_quality_bar = cp_to_eval_bar(predicted_pq_cp)
 
 # --- Report ---
@@ -108,7 +106,7 @@ print(f"  Expected cp loss vs best move : {diff_expected:.1f} cp")
 print(f"  Predicted eval after move     : {predicted_move_ease_cp:+.1f} cp")
 print(f"  Eval bar                      : {move_ease_bar:+.2f}")
 
-print(f"\n[Position Quality]  — predicted eval after ~10 moves")
+print(f"\n[Position Quality]  — predicted eval after ~20 moves")
 print(f"  Predicted eval after 10 moves : {predicted_pq_cp:+.1f} cp")
 print(f"  Eval bar                      : {position_quality_bar:+.2f}")
 
