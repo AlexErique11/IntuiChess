@@ -107,7 +107,7 @@ print(f"  Predicted eval after move     : {predicted_move_ease_cp:+.1f} cp")
 print(f"  Eval bar                      : {move_ease_bar:+.2f}")
 
 print(f"\n[Position Quality]  — predicted eval after ~20 moves")
-print(f"  Predicted eval after 10 moves : {predicted_pq_cp:+.1f} cp")
+print(f"  Predicted eval after 20 moves : {predicted_pq_cp:+.1f} cp")
 print(f"  Eval bar                      : {position_quality_bar:+.2f}")
 
 # --- Model accuracy ---
